@@ -340,7 +340,7 @@ bot.message do |event|
 	next unless allowed_discord_user?(config, event.user.id)
 
 	parts = code.split("-")
-	if !parts.nil? && parts[0].length == 4 && parts[1].length == 4 && parts[2].length == 4 && !code.include?(" ")
+	if parts.length == 3 && parts[0].length == 4 && parts[1].length == 4 && parts[2].length == 4 && !code.include?(" ")
 		event.respond("Attempting to solve survey with code `#{parts[0]}-#{parts[1]}-#{parts[2]}`. This might take a while...")
 
 		begin
@@ -353,8 +353,6 @@ bot.message do |event|
 				uri = URI.parse("https://hastebin.com/documents")
 				http = Net::HTTP.new(uri.host, uri.port)
 				http.use_ssl = true
-				http.verify_mode = OpenSSL::SSL::VERIFY_NONE
-
 				request = Net::HTTP::Post.new(uri.request_uri)
 				request.body = solver.log
 
@@ -368,11 +366,13 @@ bot.message do |event|
 			puts "[DC >] @#{event.user.id}: #{response_text.inspect}"
 
 			begin
-				throw "no image" unless result.key? :image
+				raise "no image" unless result.key? :image
 				path = result[:image]
 				path = path.path if path.is_a? File
 				event.channel.send_message(response_text)
-				event.channel.send_file(File.open(path, "rb"))
+				File.open(path, "rb") do |file|
+					event.channel.send_file(file)
+				end
 			rescue StandardError
 				event.respond(response_text)
 			end
