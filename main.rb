@@ -3,7 +3,7 @@ require "bundler/inline"
 gemfile($DEBUG) do
 	source "https://rubygems.org"
 
-	gem "telegram-bot-ruby", :require => "telegram/bot"
+	gem "discordrb"
 	gem "selenium-webdriver", "~> 3.6.0"
 	gem "phantomjs"
 	gem "chunky_png"
@@ -301,84 +301,91 @@ class McDonaldsSurveySolver
 	end
 end
 
+def allowed_discord_user?(config, user_id)
+	return true if config[:discord_users] == "*"
+	return false unless config[:discord_users].is_a?(Array)
+	config[:discord_users].map(&:to_s).include?(user_id.to_s)
+end
+
 config = JSON.parse(File.read("config.json"), :symbolize_names => true)
 Selenium::WebDriver::PhantomJS.path = File.expand_path(config[:phantomjs_path])
-Telegram::Bot::Client.run(config[:telegram_token]) do |bot|
-	puts "Bot logged in and started"
 
-	Signal.trap("SIGINT") do
-		puts "Quitting"
-		Thread.kill Thread.current
+bot = Discordrb::Bot.new(
+	token: config[:discord_token],
+	intents: [:server_messages, :direct_messages, :message_content]
+)
+
+puts "Bot logged in and started"
+
+Signal.trap("SIGINT") do
+	puts "Quitting"
+	bot.stop
+	exit
+end
+
+bot.message do |event|
+	next if event.user.bot_account?
+
+	incoming_text = event.message.content.to_s
+	puts "[DC <] @#{event.user.id}: #{incoming_text.inspect}"
+	code = incoming_text.chomp(" ")
+
+	if code == "/start"
+		text = "Your User ID is `#{event.user.id}`."
+		event.respond(text)
+		puts "[DC >] @#{event.user.id}: #{text.inspect}"
+		next
 	end
 
-	bot.fetch_updates do |message|
-		puts "[TG <] @#{message.chat.id}: #{message.text.inspect}"
+	next unless allowed_discord_user?(config, event.user.id)
 
-		if message.text == "/start"
-			text = "Your Chat ID is `#{message.chat.id}`."
-			bot.api.send_message(chat_id: message.chat.id, text: text, parse_mode: "Markdown")
-			puts "[TG >] @#{message.chat.id}: #{text.inspect}"
+	parts = code.split("-")
+	if !parts.nil? && parts[0].length == 4 && parts[1].length == 4 && parts[2].length == 4 && !code.include?(" ")
+		event.respond("Attempting to solve survey with code `#{parts[0]}-#{parts[1]}-#{parts[2]}`. This might take a while...")
 
-		elsif config[:telegram_users] == "*" || config[:telegram_users].include?(message.chat.id)
-			code = message.text.chomp(" ")
-			parts = code.split("-")
-			if !parts.nil? && parts[0].length == 4 && parts[1].length == 4 && parts[2].length == 4 && !code.include?(" ")
-				bot.api.send_message(chat_id: message.chat.id, text: "Attempting to solve survey with code `#{parts[0]}`**-**`#{parts[1]}`**-**`#{parts[2]}`. This might take a while...", parse_mode: "Markdown", reply_to_message_id: message.message_id)
-				done = false
+		begin
+			solver = McDonaldsSurveySolver.new
+			result = solver.fetch_voucher("#{parts[0]}-#{parts[1]}-#{parts[2]}", config[:text_answer], config[:url])
 
-				Thread.new do
-					loop do
-						break if done
-						bot.api.send_chat_action(chat_id: message.chat.id, action: "typing")
-						sleep 4
-					end
-				end
+			log_url = nil
+			response_text = result[:message]
+			begin
+				uri = URI.parse("https://hastebin.com/documents")
+				http = Net::HTTP.new(uri.host, uri.port)
+				http.use_ssl = true
+				http.verify_mode = OpenSSL::SSL::VERIFY_NONE
 
-				begin
-					solver = McDonaldsSurveySolver.new
-					result = solver.fetch_voucher("#{parts[0]}-#{parts[1]}-#{parts[2]}", config[:text_answer], config[:url])
-					done = true
+				request = Net::HTTP::Post.new(uri.request_uri)
+				request.body = solver.log
 
-					log_url = nil
-					message = result[:message]
-					begin
-						uri = URI.parse("https://hastebin.com/documents")
-						http = Net::HTTP.new(uri.host, uri.port)
-						http.use_ssl = true
-						http.verify_mode = OpenSSL::SSL::VERIFY_NONE
-
-						request = Net::HTTP::Post.new(uri.request_uri)
-						request.body = solver.log
-
-						# Send the request
-						response = http.request(request)
-						log_url = "https://hastebin.com/#{JSON.parse(response.body)["key"]}.txt"
-					rescue StandardError => e
-						puts "Uploading to hastebin failed: #{generate_exception_message(e)}"
-					end
-
-					message += "\n" + "Full log: #{log_url}" if !message.nil? && !log_url.nil?
-					puts "[TG >] @#{message.chat.id}: #{message.inspect}"
-
-					begin
-						throw "no image" unless result.key? :image
-						path = result[:image]
-						path = path.path if path.is_a? File
-						message_result = bot.api.send_photo(chat_id: message.chat.id, caption: message, parse_mode: "Markdown", photo: Faraday::UploadIO.new(path, 'image/png'))
-						throw "upload failed" unless message_result["ok"]
-					rescue StandardError => e
-						bot.api.send_message(chat_id: message.chat.id, text: message, parse_mode: "Markdown")
-					end
-
-					solver.cleanup
-				rescue => e
-					puts "Generic error occurred while handling solve request: #{e.class.to_s}: #{e.message} (#{e.backtrace.inspect})"
-				end
-			else
-				text = "That doesn't seem like a valid code. Example: `b10c-3yvd-0dus`"
-				bot.api.send_message(chat_id: message.chat.id, text: text, parse_mode: "Markdown")
-				puts "[TG >] @#{message.chat.id}: #{text.inspect}"
+				response = http.request(request)
+				log_url = "https://hastebin.com/#{JSON.parse(response.body)["key"]}.txt"
+			rescue StandardError => e
+				puts "Uploading to hastebin failed: #{generate_exception_message(e)}"
 			end
+
+			response_text += "\nFull log: #{log_url}" if !response_text.nil? && !log_url.nil?
+			puts "[DC >] @#{event.user.id}: #{response_text.inspect}"
+
+			begin
+				throw "no image" unless result.key? :image
+				path = result[:image]
+				path = path.path if path.is_a? File
+				event.channel.send_message(response_text)
+				event.channel.send_file(File.open(path, "rb"))
+			rescue StandardError
+				event.respond(response_text)
+			end
+
+			solver.cleanup
+		rescue => e
+			puts "Generic error occurred while handling solve request: #{e.class.to_s}: #{e.message} (#{e.backtrace.inspect})"
 		end
-	end while true
+	else
+		text = "That doesn't seem like a valid code. Example: `b10c-3yvd-0dus`"
+		event.respond(text)
+		puts "[DC >] @#{event.user.id}: #{text.inspect}"
+	end
 end
+
+bot.run

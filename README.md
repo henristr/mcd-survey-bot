@@ -6,7 +6,7 @@ McDonald's germany currently has an offer where you can get a free drink or coff
 
 ![preview image 2](https://i.imgur.com/3cQjqCZ.png)
 
-This bot **fully automates** the tiresome process of doing that yourself, and instead lets you just send your receipt code to a telegram bot and spits out the voucher and code:
+This bot **fully automates** the tiresome process of doing that yourself, and instead lets you just send your receipt code to a Discord bot and spits out the voucher and code:
 
 ![preview image](https://i.imgur.com/6WCKahA.png)
 
@@ -41,10 +41,10 @@ Example log output:
 # Installation
 1. Install Ruby (2.5+, for Windows: https://rubyinstaller.org/)
 2. Download phantomjs and put it in the bin/ directory (windows) or install it system wide (linux)
-3. Message [@BotFather](https://t.me/@BotFather) on telegram and create a new bot
+3. Create a Discord application and bot in the [Discord Developer Portal](https://discord.com/developers/applications), then copy the bot token
 4. Rename `config.example.json` to `config.json` and open it with your text editor of choice
-5. Replace `YOUR_TG_BOT_TOKEN` with your telegram bot token
-6. Replace `YOUR_CHATID` with your chat id (`/start` the bot to display it) or set `telegram_users` to `"*"` to allow commands from all users
+5. Replace `YOUR_DISCORD_BOT_TOKEN` with your Discord bot token
+6. Replace `YOUR_DISCORD_USER_ID` with your Discord user id (`/start` with the bot to display it) or set `discord_users` to `"*"` to allow commands from all users
 7. Point `"phantomjs_path"` to the path of your phantomjs installation, will be `bin/phantomjs.exe` if running on Windows with the default setup
 8. Usage: Send the bot a valid receipt code, it will then try to fill out the survey.
 
