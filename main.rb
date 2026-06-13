@@ -353,6 +353,7 @@ bot.message do |event|
 				uri = URI.parse("https://hastebin.com/documents")
 				http = Net::HTTP.new(uri.host, uri.port)
 				http.use_ssl = true
+				http.verify_mode = OpenSSL::SSL::VERIFY_PEER
 				request = Net::HTTP::Post.new(uri.request_uri)
 				request.body = solver.log
 
@@ -362,11 +363,11 @@ bot.message do |event|
 				puts "Uploading to hastebin failed: #{generate_exception_message(e)}"
 			end
 
-			response_text += "\nFull log: #{log_url}" if !response_text.nil? && !log_url.nil?
+			response_text += "\nFull log: #{log_url}" if response_text && log_url
 			puts "[DC >] @#{event.user.id}: #{response_text.inspect}"
 
 			begin
-				raise "Result does not contain image data" unless result.key? :image
+				raise "Survey result missing image data" unless result.key? :image
 				path = result[:image]
 				path = path.path if path.is_a? File
 				event.channel.send_message(response_text)
