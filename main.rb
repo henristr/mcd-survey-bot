@@ -366,14 +366,15 @@ bot.message do |event|
 			puts "[DC >] @#{event.user.id}: #{response_text.inspect}"
 
 			begin
-				raise "no image" unless result.key? :image
+				raise "Result does not contain image data" unless result.key? :image
 				path = result[:image]
 				path = path.path if path.is_a? File
 				event.channel.send_message(response_text)
 				File.open(path, "rb") do |file|
 					event.channel.send_file(file)
 				end
-			rescue StandardError
+			rescue StandardError => e
+				puts "Sending image failed, sending text only: #{generate_exception_message(e)}"
 				event.respond(response_text)
 			end
 
